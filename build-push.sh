@@ -25,7 +25,9 @@ elif echo "$out" | grep -q ': not found$'; then
     # 用臨時的 docker-container builder（預設的 docker driver 不能匯出 registry 快取），建完就刪，
     # 不用也不動主機上其他人的快取。不附 attestation，推上去的仍是單一 manifest。
     BUILDER="webinux-$$"
-    docker buildx create --name "$BUILDER" --driver docker-container --bootstrap >/dev/null
+    # buildkit 固定 v0.30.0（和 ib-gateway 的 CI 相同）：v0.31 起內附的 runc 在 kernel 5.4 的主機上跑 RUN 會失敗
+    docker buildx create --name "$BUILDER" --driver docker-container \
+        --driver-opt image=moby/buildkit@sha256:0168606be2315b7c807a03b3d8aa79beefdb31c98740cebdffdfeebf31190c9f --bootstrap >/dev/null
     trap 'docker buildx rm "$BUILDER" >/dev/null' EXIT
     git archive HEAD | docker buildx build --builder "$BUILDER" --push --provenance=false --sbom=false \
         --cache-from "type=registry,ref=$REPO:buildcache" \
