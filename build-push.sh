@@ -3,11 +3,12 @@
 #   每個 commit 只建一次、只推不可覆蓋的 `main-<8 碼 sha>`；別名 `latest` 用 imagetools 指過去
 #   （只傳 manifest，摘要不變、不重傳）。registry 的清理規則只清 `^main-[0-9a-f]{8}$`、別名與 `buildcache` 不會被清。
 # 用法：先 `docker login <registry>`（要有寫入 registry 的權限），再在 repo 根目錄執行
-#   ./build-push.sh
+#   REPO=<registry>/<namespace>/<project>/webinux ./build-push.sh
 # 只建已 commit 的內容（git archive HEAD），工作目錄有未 commit 的改動就拒絕執行。
 set -eu
 
-REPO=${REPO:-<registry>/chesham/ib-gateway/webinux}
+# 映像位置由環境變數給（不寫死 registry 主機）
+REPO=${REPO:?set REPO=<registry>/<namespace>/<project>/webinux}
 ALIAS=${ALIAS:-latest}
 
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
