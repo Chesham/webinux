@@ -1,7 +1,7 @@
 #!/bin/sh
 # 建置並推送 webinux 映像（這個 repo 沒有 GitLab CI，照 ib-gateway 的 CI 規則手動跑）：
 #   每個 commit 只建一次、只推不可覆蓋的 `main-<8 碼 sha>`；別名 `latest` 用 imagetools 指過去
-#   （只傳 manifest，摘要不變、不重傳）。registry 的清理規則只清 `^main-[0-9a-f]{8}$`、別名永遠保留。
+#   （只傳 manifest，摘要不變、不重傳）。registry 的清理規則只清 `^main-[0-9a-f]{8}$`、別名與 `buildcache` 不會被清。
 # 用法：先 `docker login <registry>`（要有寫入 registry 的權限），再在 repo 根目錄執行
 #   ./build-push.sh
 # 只建已 commit 的內容（git archive HEAD），工作目錄有未 commit 的改動就拒絕執行。
@@ -21,8 +21,16 @@ IMAGE="$REPO:main-$SHA"
 if out=$(docker buildx imagetools inspect "$IMAGE" 2>&1); then
     echo "$IMAGE already in the registry; not rebuilding (never overwritten)"
 elif echo "$out" | grep -q ': not found$'; then
-    git archive HEAD | docker build -t "$IMAGE" -
-    docker push "$IMAGE"
+    # 快取放 registry（固定 tag `buildcache`，每次覆蓋），在哪台主機跑都能沿用；
+    # 用臨時的 docker-container builder（預設的 docker driver 不能匯出 registry 快取），建完就刪，
+    # 不用也不動主機上其他人的快取。不附 attestation，推上去的仍是單一 manifest。
+    BUILDER="webinux-$$"
+    docker buildx create --name "$BUILDER" --driver docker-container --bootstrap >/dev/null
+    trap 'docker buildx rm "$BUILDER" >/dev/null' EXIT
+    git archive HEAD | docker buildx build --builder "$BUILDER" --push --provenance=false --sbom=false \
+        --cache-from "type=registry,ref=$REPO:buildcache" \
+        --cache-to "type=registry,ref=$REPO:buildcache,mode=max,image-manifest=true,oci-mediatypes=true" \
+        -t "$IMAGE" -
 else
     echo "$out" >&2
     echo "cannot tell whether $IMAGE exists; stopping" >&2
